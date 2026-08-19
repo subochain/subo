@@ -1,0 +1,12 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Subo
+Comment=Subo P2P Cryptocurrency
+Comment[fr]=Subo, monnaie virtuelle cryptographique pair à pair
+Comment[tr]=Subo, eşten eşe kriptografik sanal para birimi
+Exec=subo-qt %u
+Terminal=false
+Type=Application
+Icon=subo128
+MimeType=x-scheme-handler/subo;
+Categories=Office;Finance;

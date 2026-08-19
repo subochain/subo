@@ -1,0 +1,22 @@
+[Unit]
+Description=Subo's distributed currency daemon
+After=network.target
+
+[Service]
+User=subochain
+Group=subochain
+
+Type=forking
+PIDFile=/var/lib/subod/subod.pid
+ExecStart=/usr/bin/subod -daemon -pid=/var/lib/subod/subod.pid \
+-conf=/etc/subochain/subo.conf -datadir=/var/lib/subod -disablewallet
+
+Restart=always
+PrivateTmp=true
+TimeoutStopSec=60s
+TimeoutStartSec=2s
+StartLimitInterval=120s
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

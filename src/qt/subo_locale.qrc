@@ -1,0 +1,20 @@
+<!DOCTYPE RCC><RCC version="1.0">
+    <qresource prefix="/translations">
+        <file alias="bg">locale/subo_bg.qm</file>
+        <file alias="de">locale/subo_de.qm</file>
+        <file alias="en">locale/subo_en.qm</file>
+        <file alias="es">locale/subo_es.qm</file>
+        <file alias="fi">locale/subo_fi.qm</file>
+        <file alias="fr">locale/subo_fr.qm</file>
+        <file alias="it">locale/subo_it.qm</file>
+        <file alias="ja">locale/subo_ja.qm</file>
+        <file alias="pl">locale/subo_pl.qm</file>
+        <file alias="pt">locale/subo_pt.qm</file>
+        <file alias="ru">locale/subo_ru.qm</file>
+        <file alias="sk">locale/subo_sk.qm</file>
+        <file alias="sv">locale/subo_sv.qm</file>
+        <file alias="vi">locale/subo_vi.qm</file>
+        <file alias="zh_CN">locale/subo_zh_CN.qm</file>
+        <file alias="zh_TW">locale/subo_zh_TW.qm</file>
+    </qresource>
+</RCC>

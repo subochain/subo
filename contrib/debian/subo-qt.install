@@ -1,0 +1,6 @@
+usr/local/bin/subo-qt usr/bin
+share/pixmaps/subo32.xpm usr/share/pixmaps
+share/pixmaps/subo16.xpm usr/share/pixmaps
+share/pixmaps/subo128.png usr/share/pixmaps
+debian/subo-qt.desktop usr/share/applications
+debian/subo-qt.protocol usr/share/kde4/services/

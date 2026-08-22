@@ -1,0 +1,16 @@
+Modern glibc (2.34+) dropped the legacy BSD-compat sys/sysctl.h entirely, so
+#include_next has nothing left to chain to on current Linux hosts, breaking
+the build with "fatal error: 'sys/sysctl.h' file not found". Even back when
+that header did exist on Linux, its legacy sysctl(2) used a completely
+different MIB numbering scheme than BSD/Darwin's, so chaining to it was
+never actually functional for this file's KERN_OSRELEASE/KERN_OSVERSION use
+- just always use the same safe stub this file already uses for Cygwin.
+
+--- a/include/foreign/sys/sysctl.h
++++ b/include/foreign/sys/sysctl.h
+@@ -1,4 +1,4 @@
+-#ifndef __CYGWIN__
++#if !defined(__CYGWIN__) && !defined(__linux__)
+ #include_next <sys/sysctl.h>
+ #else
+ #ifndef __SYSCTL_H__

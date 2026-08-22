@@ -114,20 +114,26 @@ AC_DEFUN([BITCOIN_QT_CONFIGURE],[
     if test x$bitcoin_cv_static_qt = xyes; then
       _BITCOIN_QT_FIND_STATIC_PLUGINS
       AC_DEFINE(QT_STATICPLUGIN, 1, [Define this symbol if qt plugins are static])
+      dnl NOTE: this condition was inverted upstream - it must choke (fail to
+      dnl compile) for Qt > 5.4 so bitcoin_cv_need_acc_widget=no in that case,
+      dnl since the standalone qtaccessiblewidgets plugin doesn't exist past
+      dnl Qt 5.4 (accessibility moved into gui/platformsupport). With the
+      dnl original "<=" comparison this always evaluated to "yes" on modern
+      dnl Qt, requiring a plugin that can never be found or built.
       AC_CACHE_CHECK(for Qt < 5.4, bitcoin_cv_need_acc_widget,[AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
           [[#include <QtCore>]],[[
-          #if QT_VERSION >= 0x050400
+          #if QT_VERSION < 0x050400
           choke;
           #endif
           ]])],
         [bitcoin_cv_need_acc_widget=yes],
         [bitcoin_cv_need_acc_widget=no])
       ])
-      if test "x$bitcoin_cv_need_acc_widget" = "xyes"; then
-        _BITCOIN_QT_CHECK_STATIC_PLUGINS([Q_IMPORT_PLUGIN(AccessibleFactory)], [-lqtaccessiblewidgets])
-      fi
       if test x$TARGET_OS = xwindows; then
-        _BITCOIN_QT_CHECK_STATIC_PLUGINS([Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)],[-lqwindows])
+        dnl qwindows.a needs QWindowsGuiEventDispatcher from Qt5PlatformSupport,
+        dnl which is only added to QT_LIBS via the pkg-config path above; add it
+        dnl explicitly here so the static link works regardless of pkg-config use.
+        _BITCOIN_QT_CHECK_STATIC_PLUGINS([Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)],[-lqwindows -lQt5PlatformSupport])
         AC_DEFINE(QT_QPA_PLATFORM_WINDOWS, 1, [Define this symbol if the qt platform is windows])
       elif test x$TARGET_OS = xlinux; then
         _BITCOIN_QT_CHECK_STATIC_PLUGINS([Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)],[-lqxcb -lxcb-static])
@@ -147,7 +153,7 @@ AC_DEFUN([BITCOIN_QT_CONFIGURE],[
          Q_IMPORT_PLUGIN(qtwcodecs)
          Q_IMPORT_PLUGIN(qkrcodecs)
          Q_IMPORT_PLUGIN(AccessibleFactory)],
-         [-lqcncodecs -lqjpcodecs -lqtwcodecs -lqkrcodecs -lqtaccessiblewidgets])
+         [-lqcncodecs -lqjpcodecs -lqtwcodecs -lqkrcodecs])
     fi
   fi
   CPPFLAGS=$TEMP_CPPFLAGS

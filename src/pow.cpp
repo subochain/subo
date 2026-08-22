@@ -12,175 +12,119 @@
 #include "uint256.h"
 #include "util.h"
 
+#include <algorithm>
 #include <math.h>
 
-unsigned int static KimotoGravityWell(const CBlockIndex* pindexLast, const Consensus::Params& params) {
-    const CBlockIndex *BlockLastSolved = pindexLast;
-    const CBlockIndex *BlockReading = pindexLast;
-    uint64_t PastBlocksMass = 0;
-    int64_t PastRateActualSeconds = 0;
-    int64_t PastRateTargetSeconds = 0;
-    double PastRateAdjustmentRatio = double(1);
-    arith_uint256 PastDifficultyAverage;
-    arith_uint256 PastDifficultyAveragePrev;
-    double EventHorizonDeviation;
-    double EventHorizonDeviationFast;
-    double EventHorizonDeviationSlow;
-
-    uint64_t pastSecondsMin = params.nPowTargetTimespan * 0.025;
-    uint64_t pastSecondsMax = params.nPowTargetTimespan * 7;
-    uint64_t PastBlocksMin = pastSecondsMin / params.nPowTargetSpacing;
-    uint64_t PastBlocksMax = pastSecondsMax / params.nPowTargetSpacing;
-
-    if (BlockLastSolved == NULL || BlockLastSolved->nHeight == 0 || (uint64_t)BlockLastSolved->nHeight < PastBlocksMin) { return UintToArith256(params.powLimit).GetCompact(); }
-
-    for (unsigned int i = 1; BlockReading && BlockReading->nHeight > 0; i++) {
-        if (PastBlocksMax > 0 && i > PastBlocksMax) { break; }
-        PastBlocksMass++;
-
-        PastDifficultyAverage.SetCompact(BlockReading->nBits);
-        if (i > 1) {
-            // handle negative arith_uint256
-            if(PastDifficultyAverage >= PastDifficultyAveragePrev)
-                PastDifficultyAverage = ((PastDifficultyAverage - PastDifficultyAveragePrev) / i) + PastDifficultyAveragePrev;
-            else
-                PastDifficultyAverage = PastDifficultyAveragePrev - ((PastDifficultyAveragePrev - PastDifficultyAverage) / i);
-        }
-        PastDifficultyAveragePrev = PastDifficultyAverage;
-
-        PastRateActualSeconds = BlockLastSolved->GetBlockTime() - BlockReading->GetBlockTime();
-        PastRateTargetSeconds = params.nPowTargetSpacing * PastBlocksMass;
-        PastRateAdjustmentRatio = double(1);
-        if (PastRateActualSeconds < 0) { PastRateActualSeconds = 0; }
-        if (PastRateActualSeconds != 0 && PastRateTargetSeconds != 0) {
-            PastRateAdjustmentRatio = double(PastRateTargetSeconds) / double(PastRateActualSeconds);
-        }
-        EventHorizonDeviation = 1 + (0.7084 * pow((double(PastBlocksMass)/double(28.2)), -1.228));
-        EventHorizonDeviationFast = EventHorizonDeviation;
-        EventHorizonDeviationSlow = 1 / EventHorizonDeviation;
-
-        if (PastBlocksMass >= PastBlocksMin) {
-                if ((PastRateAdjustmentRatio <= EventHorizonDeviationSlow) || (PastRateAdjustmentRatio >= EventHorizonDeviationFast))
-                { assert(BlockReading); break; }
-        }
-        if (BlockReading->pprev == NULL) { assert(BlockReading); break; }
-        BlockReading = BlockReading->pprev;
-    }
-
-    arith_uint256 bnNew(PastDifficultyAverage);
-    if (PastRateActualSeconds != 0 && PastRateTargetSeconds != 0) {
-        bnNew *= PastRateActualSeconds;
-        bnNew /= PastRateTargetSeconds;
-    }
-
-    if (bnNew > UintToArith256(params.powLimit)) {
-        bnNew = UintToArith256(params.powLimit);
-    }
-
-    return bnNew.GetCompact();
-}
-
-unsigned int static DarkGravityWave(const CBlockIndex* pindexLast, const Consensus::Params& params) {
-    /* current difficulty formula, subo - DarkGravity v3, written by Evan Duffield - evan@dash.org */
+unsigned int static SuboRetarget(const CBlockIndex* pindexLast, const CBlockHeader* pblock, const Consensus::Params& params)
+{
     const arith_uint256 bnPowLimit = UintToArith256(params.powLimit);
-    int64_t nPastBlocks = 24;
 
-    // make sure we have at least (nPastBlocks + 1) blocks, otherwise just return powLimit
-    if (!pindexLast || pindexLast->nHeight < nPastBlocks) {
+    // regtest only: always mine at a fixed, minimum difficulty for test tooling.
+    if (params.fPowNoRetargeting)
+        return pindexLast ? pindexLast->nBits : bnPowLimit.GetCompact();
+
+    // Bootstrap: no history yet, mine at the easiest possible target.
+    if (!pindexLast || pindexLast->nHeight < 1)
         return bnPowLimit.GetCompact();
-    }
 
-    const CBlockIndex *pindex = pindexLast;
+    // --- base retarget: short weighted-average window ----------------------
+    // The old DarkGravityWave used a 24-block window with up to a 3x swing
+    // per step. That's fine for a hash that solves in milliseconds, but
+    // HashSubo's 32 MiB Argon2d step means realistic hashrate for a single
+    // miner is more like tens of H/s - a handful of easy early blocks can
+    // push the target 3x harder on every following block for a dozen-plus
+    // blocks before it finds the real equilibrium, and nothing can correct
+    // an overshoot faster than "wait for the next block to be found", which
+    // may not happen for a very long time once it overshoots the real
+    // hashrate by a couple of orders of magnitude. A much shorter window
+    // settles in a handful of blocks instead of dozens, and the emergency
+    // easing below is the real backstop if it still overshoots.
+    static const int64_t nWindow = 6;
+    int64_t nBlocks = std::min<int64_t>(nWindow, pindexLast->nHeight);
+
+    // powLimit here is ~2^255 (deliberately huge so genesis mining under
+    // Argon2 stays cheap - see chainparams.cpp) - about as large as an
+    // arith_uint256 can hold. That leaves essentially no headroom for the
+    // classic DGW-style running average (bnAvg*i + bnTarget)/(i+1): with
+    // bnAvg near powLimit, multiplying by i overflows the 256-bit type and
+    // wraps to a effectively-arbitrary value, silently producing a wildly
+    // wrong (often far too hard) target instead of an error. Use the
+    // equivalent incremental-mean form instead (avg += (x-avg)/n), which
+    // only ever adds/subtracts/divides - never multiplies a near-max value
+    // - so it can't overflow regardless of how close to powLimit it is.
+    const CBlockIndex* pindex = pindexLast;
     arith_uint256 bnPastTargetAvg;
-
-    for (unsigned int nCountBlocks = 1; nCountBlocks <= nPastBlocks; nCountBlocks++) {
+    for (int64_t i = 1; i <= nBlocks; i++) {
         arith_uint256 bnTarget = arith_uint256().SetCompact(pindex->nBits);
-        if (nCountBlocks == 1) {
+        if (i == 1) {
             bnPastTargetAvg = bnTarget;
+        } else if (bnTarget >= bnPastTargetAvg) {
+            bnPastTargetAvg += (bnTarget - bnPastTargetAvg) / (i + 1);
         } else {
-            // NOTE: that's not an average really...
-            bnPastTargetAvg = (bnPastTargetAvg * nCountBlocks + bnTarget) / (nCountBlocks + 1);
+            bnPastTargetAvg -= (bnPastTargetAvg - bnTarget) / (i + 1);
         }
-
-        if(nCountBlocks != nPastBlocks) {
-            assert(pindex->pprev); // should never fail
-            pindex = pindex->pprev;
-        }
+        if (i != nBlocks) pindex = pindex->pprev;
     }
-
-    arith_uint256 bnNew(bnPastTargetAvg);
 
     int64_t nActualTimespan = pindexLast->GetBlockTime() - pindex->GetBlockTime();
-    // NOTE: is this accurate? nActualTimespan counts it for (nPastBlocks - 1) blocks only...
-    int64_t nTargetTimespan = nPastBlocks * params.nPowTargetSpacing;
+    int64_t nTargetTimespan = nBlocks * params.nPowTargetSpacing;
 
-    if (nActualTimespan < nTargetTimespan/3)
-        nActualTimespan = nTargetTimespan/3;
-    if (nActualTimespan > nTargetTimespan*3)
-        nActualTimespan = nTargetTimespan*3;
+    // Tighter per-step clamp than the old 1/3..3x, so a burst of easy
+    // blocks can't overshoot the real equilibrium by orders of magnitude
+    // before there's been a chance to feel out the real hashrate.
+    if (nActualTimespan < nTargetTimespan / 2)
+        nActualTimespan = nTargetTimespan / 2;
+    if (nActualTimespan > nTargetTimespan * 2)
+        nActualTimespan = nTargetTimespan * 2;
 
-    // Retarget
-    bnNew *= nActualTimespan;
+    // Same overflow hazard as above: dividing first keeps the intermediate
+    // value well clear of the 256-bit ceiling before scaling it back up,
+    // where multiplying first could overflow when bnPastTargetAvg is close
+    // to powLimit (losing a few low bits of precision here is irrelevant
+    // for a security parameter this coarse).
+    arith_uint256 bnNew = bnPastTargetAvg;
     bnNew /= nTargetTimespan;
+    bnNew *= nActualTimespan;
 
-    if (bnNew > bnPowLimit) {
-        bnNew = bnPowLimit;
-    }
-
-    return bnNew.GetCompact();
-}
-
-unsigned int GetNextWorkRequiredBTC(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
-{
-    unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
-
-    // Genesis block
-    if (pindexLast == NULL)
-        return nProofOfWorkLimit;
-
-    // Only change once per interval
-    if ((pindexLast->nHeight+1) % params.DifficultyAdjustmentInterval() != 0)
-    {
-        if (params.fPowAllowMinDifficultyBlocks)
-        {
-            // Special difficulty rule for testnet:
-            // If the new block's timestamp is more than 2* 2.5 minutes
-            // then allow mining of a min-difficulty block.
-            if (pblock->GetBlockTime() > pindexLast->GetBlockTime() + params.nPowTargetSpacing*2)
-                return nProofOfWorkLimit;
-            else
-            {
-                // Return the last non-special-min-difficulty-rules-block
-                const CBlockIndex* pindex = pindexLast;
-                while (pindex->pprev && pindex->nHeight % params.DifficultyAdjustmentInterval() != 0 && pindex->nBits == nProofOfWorkLimit)
-                    pindex = pindex->pprev;
-                return pindex->nBits;
+    // --- emergency easing: don't make miners wait out an overshoot --------
+    // Everything above can only react once a block has actually been
+    // found. If the chain is stuck because a retarget overshot, no amount
+    // of block history fixes that by itself - so also look at how long
+    // it's been since the tip, using the *candidate* block's own
+    // timestamp. Every node re-derives that same timestamp identically
+    // once a block claiming it is actually mined, so this stays fully
+    // deterministic and consensus-safe; it isn't "wall clock right now" on
+    // whichever node happens to be checking. A getblocktemplate call
+    // refreshes this timestamp to the current time on every request (see
+    // CreateNewBlock()), so a miner polling for work sees the eased target
+    // directly, without needing to know anything changed.
+    if (pblock) {
+        static const int64_t nGraceSeconds = 180; // 3 minutes
+        int64_t nGap = (int64_t)pblock->nTime - pindexLast->GetBlockTime();
+        if (nGap > nGraceSeconds) {
+            int64_t nOverdue = nGap - nGraceSeconds;
+            int64_t nHalvings = nOverdue / params.nPowTargetSpacing + 1;
+            if (nHalvings > 32) nHalvings = 32; // plenty to reach powLimit well before this
+            // One bit at a time, bailing out to powLimit the moment another
+            // doubling would meet or exceed it - <<= nHalvings directly
+            // would overflow (and silently wrap to something wrong rather
+            // than clamp) once bnNew gets close to the 256-bit ceiling.
+            for (int64_t s = 0; s < nHalvings; s++) {
+                if (bnNew >= (bnPowLimit >> 1)) { bnNew = bnPowLimit; break; }
+                bnNew <<= 1;
             }
         }
-        return pindexLast->nBits;
     }
 
-    // Go back by what we want to be 1 day worth of blocks
-    int nHeightFirst = pindexLast->nHeight - (params.DifficultyAdjustmentInterval()-1);
-    assert(nHeightFirst >= 0);
-    const CBlockIndex* pindexFirst = pindexLast->GetAncestor(nHeightFirst);
-    assert(pindexFirst);
+    if (bnNew > bnPowLimit)
+        bnNew = bnPowLimit;
 
-   return CalculateNextWorkRequired(pindexLast, pindexFirst->GetBlockTime(), params);
+    return bnNew.GetCompact();
 }
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
-    // Most recent algo first
-    if (pindexLast->nHeight + 1 >= params.nPowDGWHeight) {
-        return DarkGravityWave(pindexLast, params);
-    }
-    else if (pindexLast->nHeight + 1 >= params.nPowKGWHeight) {
-        return KimotoGravityWell(pindexLast, params);
-    }
-    else {
-        return GetNextWorkRequiredBTC(pindexLast, pblock, params);
-    }
+    return SuboRetarget(pindexLast, pblock, params);
 }
 
 // for DIFF_BTC only!

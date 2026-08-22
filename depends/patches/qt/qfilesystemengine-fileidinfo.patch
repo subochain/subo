@@ -1,0 +1,21 @@
+Fix FILE_ID_INFO typedef conflict with modern MinGW-w64 headers
+
+MinGW-w64 (newer versions) defines FILE_ID_INFO as a C typedef in
+<winbase.h>. This Qt 5.7.1 header unconditionally declares its own
+FILE_ID_INFO typedef, causing a "using typedef-name 'FILE_ID_INFO'
+after 'struct'" error when cross-compiling with mingw-w64. Guard the
+fallback typedef with the same FILE_SUPPORTS_INTEGRITY_STREAMS marker
+already used for the FILE_ID_128 fallback above, which is only defined
+by modern MinGW-w64 headers that also provide FILE_ID_INFO.
+
+--- old/qtbase/src/corelib/io/qfilesystemengine_win.cpp
++++ new/qtbase/src/corelib/io/qfilesystemengine_win.cpp
+@@ -633,6 +633,8 @@
+ 
++#if !(defined(Q_CC_MINGW) && defined(FILE_SUPPORTS_INTEGRITY_STREAMS))
+ typedef struct _FILE_ID_INFO {
+     ULONGLONG VolumeSerialNumber;
+     FILE_ID_128 FileId;
+ } FILE_ID_INFO, *PFILE_ID_INFO;
++#endif // !(Q_CC_MINGW && FILE_SUPPORTS_INTEGRITY_STREAMS)
+ #  endif // if defined (Q_CC_MINGW) || (defined(Q_CC_MSVC) && (_MSC_VER < 1700 || WINVER <= 0x0601))

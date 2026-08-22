@@ -67,9 +67,14 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
     if (nOldTime < nNewTime)
         pblock->nTime = nNewTime;
 
-    // Updating time can change work required on testnet:
-    if (consensusParams.fPowAllowMinDifficultyBlocks)
-        pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
+    // SuboRetarget() (see pow.cpp) includes a time-based emergency-easing
+    // rule that depends on how large the gap to the tip has grown, so nBits
+    // must stay in sync with nTime here on every network, not just under
+    // testnet's old min-difficulty rule - otherwise a cached getblocktemplate
+    // response (see rpc/mining.cpp, which only calls UpdateTime() between
+    // full rebuilds) would keep serving a stale, too-hard target while nTime
+    // quietly moves forward underneath it.
+    pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
 
     return nNewTime - nOldTime;
 }

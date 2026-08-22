@@ -9,8 +9,17 @@ define $(package)_preprocess_cmds
   mkdir build
 endef
 
+# adc.c's adc_decompress() is called from dmgfile.c/io.c with no prototype
+# anywhere (no adc.h) - always relied on old-style implicit function
+# declarations. GCC 14+ made -Wimplicit-function-declaration a hard error
+# by default (matching C23 dropping the construct from the language), so
+# demote it back to a warning rather than patching 2015-era source that
+# only this native build tool uses. This package's _config_cmds calls
+# cmake directly rather than through the autoconf CFLAGS plumbing (which
+# only $(package)_cflags feeds), so the flag has to be passed explicitly
+# via CMAKE_C_FLAGS instead.
 define $(package)_config_cmds
-  cmake -DCMAKE_INSTALL_PREFIX:PATH=$(build_prefix)/bin ..
+  cmake -DCMAKE_INSTALL_PREFIX:PATH=$(build_prefix)/bin -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_FLAGS=-Wno-error=implicit-function-declaration ..
 endef
 
 define $(package)_build_cmds

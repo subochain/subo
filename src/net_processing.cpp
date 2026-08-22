@@ -1780,21 +1780,28 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             ReadCompactSize(vRecv); // ignore tx count; assume it is 0.
         }
 
+        // HashSubo() is memory-hard and expensive: compute each header's hash
+        // exactly once here (needed for the continuity check below) and reuse
+        // it in ProcessNewBlockHeaders instead of letting it be recomputed
+        // several more times deeper in the validation call chain.
+        std::vector<uint256> vHashes(headers.size());
         CBlockIndex *pindexLast = NULL;
         {
         LOCK(cs_main);
         uint256 hashLastBlock;
-        for (const CBlockHeader& header : headers) {
+        for (size_t n = 0; n < headers.size(); n++) {
+            const CBlockHeader& header = headers[n];
             if (!hashLastBlock.IsNull() && header.hashPrevBlock != hashLastBlock) {
                 Misbehaving(pfrom->GetId(), 20);
                 return error("non-continuous headers sequence");
             }
-            hashLastBlock = header.GetHash();
+            vHashes[n] = header.GetHash();
+            hashLastBlock = vHashes[n];
         }
         }
 
         CValidationState state;
-        if (!ProcessNewBlockHeaders(headers, state, chainparams, &pindexLast)) {
+        if (!ProcessNewBlockHeaders(headers, state, chainparams, &pindexLast, &vHashes)) {
             int nDoS;
             if (state.IsInvalid(nDoS)) {
                 if (nDoS > 0) {

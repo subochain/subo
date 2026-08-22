@@ -2903,10 +2903,11 @@ bool ReconsiderBlock(CValidationState& state, CBlockIndex *pindex) {
     return true;
 }
 
-CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
+CBlockIndex* AddToBlockIndex(const CBlockHeader& block, const uint256* phash = NULL)
 {
-    // Check for duplicate
-    uint256 hash = block.GetHash();
+    // Check for duplicate. HashSubo() is memory-hard and expensive, so reuse an
+    // already-computed hash (e.g. from AcceptBlockHeader) when one is available.
+    uint256 hash = phash ? *phash : block.GetHash();
     BlockMap::iterator it = mapBlockIndex.find(hash);
     if (it != mapBlockIndex.end())
         return it->second;
@@ -3071,10 +3072,13 @@ bool FindUndoPos(CValidationState &state, int nFile, CDiskBlockPos &pos, unsigne
     return true;
 }
 
-bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, bool fCheckPOW)
+bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, bool fCheckPOW, const uint256* phash)
 {
-    // Check proof of work matches claimed amount
-    if (fCheckPOW && !CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus()))
+    // Check proof of work matches claimed amount. HashSubo() is memory-hard and
+    // expensive, so reuse an already-computed hash (e.g. from AcceptBlockHeader)
+    // instead of recomputing it here when the caller has one available.
+    uint256 hash = phash ? *phash : block.GetHash();
+    if (fCheckPOW && !CheckProofOfWork(hash, block.nBits, Params().GetConsensus()))
         return state.DoS(50, error("CheckBlockHeader(): proof of work failed"),
                          REJECT_INVALID, "high-hash");
 
@@ -3203,21 +3207,11 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
 {
     const Consensus::Params& consensusParams = Params().GetConsensus();
     int nHeight = pindexPrev->nHeight + 1;
-    // Check proof of work
-    if(Params().NetworkIDString() == CBaseChainParams::MAIN && nHeight <= 68589){
-        // architecture issues with DGW v1 and v2)
-        unsigned int nBitsNext = GetNextWorkRequired(pindexPrev, &block, consensusParams);
-        double n1 = ConvertBitsToDouble(block.nBits);
-        double n2 = ConvertBitsToDouble(nBitsNext);
-
-        if (abs(n1-n2) > n1*0.5)
-            return state.DoS(100, error("%s : incorrect proof of work (DGW pre-fork) - %f %f %f at %d", __func__, abs(n1-n2), n1, n2, nHeight),
-                            REJECT_INVALID, "bad-diffbits");
-    } else {
-        if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-            return state.DoS(100, error("%s : incorrect proof of work at %d", __func__, nHeight),
-                            REJECT_INVALID, "bad-diffbits");
-    }
+    // Check proof of work: one algorithm (SuboRetarget, see pow.cpp), strictly
+    // enforced from genesis - no height-gated leniency window.
+    if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
+        return state.DoS(100, error("%s : incorrect proof of work at %d", __func__, nHeight),
+                        REJECT_INVALID, "bad-diffbits");
 
     // Check timestamp against prev
     if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
@@ -3297,15 +3291,17 @@ bool ContextualCheckBlock(const CBlock& block, CValidationState& state, CBlockIn
     return true;
 }
 
-static bool AcceptBlockHeader(const CBlockHeader& block, CValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex)
+static bool AcceptBlockHeader(const CBlockHeader& block, CValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex, const uint256* phash = NULL)
 {
     AssertLockHeld(cs_main);
-    // Check for duplicate
-    uint256 hash = block.GetHash();
+    // Check for duplicate. HashSubo() is memory-hard and expensive; reuse an
+    // already-computed hash (e.g. from the headers-message handler) instead of
+    // recomputing it here, and pass it on to CheckBlockHeader/AddToBlockIndex
+    // below so they don't recompute it either.
+    uint256 hash = phash ? *phash : block.GetHash();
     BlockMap::iterator miSelf = mapBlockIndex.find(hash);
     CBlockIndex *pindex = NULL;
 
-    // TODO : ENABLE BLOCK CACHE IN SPECIFIC CASES
     if (hash != chainparams.GetConsensus().hashGenesisBlock) {
 
         if (miSelf != mapBlockIndex.end()) {
@@ -3318,7 +3314,7 @@ static bool AcceptBlockHeader(const CBlockHeader& block, CValidationState& state
             return true;
         }
 
-        if (!CheckBlockHeader(block, state))
+        if (!CheckBlockHeader(block, state, true, &hash))
             return false;
 
         // Get prev block index
@@ -3338,7 +3334,7 @@ static bool AcceptBlockHeader(const CBlockHeader& block, CValidationState& state
             return false;
     }
     if (pindex == NULL)
-        pindex = AddToBlockIndex(block);
+        pindex = AddToBlockIndex(block, &hash);
 
     if (ppindex)
         *ppindex = pindex;
@@ -3352,12 +3348,15 @@ static bool AcceptBlockHeader(const CBlockHeader& block, CValidationState& state
 }
 
 // Exposed wrapper for AcceptBlockHeader
-bool ProcessNewBlockHeaders(const std::vector<CBlockHeader>& headers, CValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex)
+bool ProcessNewBlockHeaders(const std::vector<CBlockHeader>& headers, CValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex, const std::vector<uint256>* phashes)
 {
+    if (phashes) assert(phashes->size() == headers.size());
     {
         LOCK(cs_main);
-        for (const CBlockHeader& header : headers) {
-            if (!AcceptBlockHeader(header, state, chainparams, ppindex)) {
+        for (std::vector<CBlockHeader>::size_type i = 0; i < headers.size(); i++) {
+            const CBlockHeader& header = headers[i];
+            const uint256* phash = phashes ? &(*phashes)[i] : NULL;
+            if (!AcceptBlockHeader(header, state, chainparams, ppindex, phash)) {
                 return false;
             }
         }

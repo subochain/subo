@@ -1,9 +1,9 @@
 AC_DEFUN([BITCOIN_FIND_BDB48],[
   AC_MSG_CHECKING([for Berkeley DB C++ headers])
   BDB_CPPFLAGS=
-  BDB_LIBS=
-  bdbpath=X
-  bdb48path=X
+  BDB_LIBS=/home/developer/subochain/db4.8/lib
+  bdbpath=/home/developer/subochain/db4.8
+  bdb48path=/home/developer/subochain/db4.8
   bdbdirlist=
   for _vn in 4.8 48 4 5 ''; do
     for _pfx in b lib ''; do

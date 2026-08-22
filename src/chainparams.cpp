@@ -52,7 +52,7 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
  */
 static CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
 {
-    const char* pszTimestamp = "Start blockchain";
+    const char* pszTimestamp = "SuboChain - fair launch, zero premine - 22/Aug/2026";
     const CScript genesisOutputScript = CScript() << ParseHex("042003d56cd57d553ba64767b0da5461d1e1effce6cd93e53c90e130288241801d4508dd29b101a52e45dc702bf09edb76890aad60a03c1ab4f2deb8555eb2170e") << OP_CHECKSIG;
     return CreateGenesisBlock(pszTimestamp, genesisOutputScript, nTime, nNonce, nBits, nVersion, genesisReward);
 }
@@ -91,7 +91,7 @@ public:
         consensus.nMajorityRejectBlockOutdated = 950;
         consensus.nMajorityWindow = 1000;
         consensus.BIP34Height = 0;
-        consensus.BIP34Hash = uint256S("0x424a3ace4a50466bc0fd57e01a8192c9d94740d1d6cc474e30a4a83abaf63dab");
+        consensus.BIP34Hash = uint256S("0x4eb280fcccd7dc06ad65a6270d34fb983b16073209a40de195650752386240ca");
         consensus.powLimit = uint256S("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 4 * 60;
         consensus.nPowTargetSpacing = 2.5 * 60;
@@ -118,10 +118,10 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0001].nThreshold = 3226;
 
        // The best chain should have at least this much work.
-        consensus.nMinimumChainWork = uint256S("0x0");
+        consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000000000000000000000065");
 
         // By default assume that the signatures in ancestors of this block are valid.
-        consensus.defaultAssumeValid = uint256S("0x0");
+        consensus.defaultAssumeValid = uint256S("0x009589a041f7fe965fde8068e32e679cf357fe341d07eb534eeea206c55654f8");
 
         /**
          * The message start string is designed to be unlikely to occur in normal data.
@@ -138,15 +138,17 @@ public:
         nDelayGetHeadersTime = 24 * 60 * 60;
         nPruneAfterHeight = 100000;
 
-        genesis = CreateGenesisBlock(1777268123, 0, 0x207fffff, 1, 5000 * COIN);
+        genesis = CreateGenesisBlock(1787390820, 1, 0x207fffff, 1, 0);
         consensus.hashGenesisBlock = genesis.GetHash();
 
-        assert(consensus.hashGenesisBlock == uint256S("0x6c0b324d3d9930f161d645a7abacfb9719119509b4abdd842c94a4958ddddb1d"));
-        assert(genesis.hashMerkleRoot == uint256S("0xd181c1376cfd9fc1811e3eacc47e7cbc42e0c1cc443e0cd6ed37d1920dc7a1db"));
+        assert(consensus.hashGenesisBlock == uint256S("0x4eb280fcccd7dc06ad65a6270d34fb983b16073209a40de195650752386240ca"));
+        assert(genesis.hashMerkleRoot == uint256S("0x222456c30b50fec2f02c61fe29bdb263a285f5eb1666135621273b2edd8131be"));
 
         vSeeds.push_back(CDNSSeedData("89.127.207.196", "89.127.207.196"));
 	vSeeds.push_back(CDNSSeedData("130.17.13.125", "130.17.13.125"));
 	vSeeds.push_back(CDNSSeedData("194.154.27.42", "194.154.27.42"));
+        vSeeds.push_back(CDNSSeedData("194.107.200.23", "194.107.200.23"));
+        vSeeds.push_back(CDNSSeedData("89.127.193.101", "89.127.193.101"));
         //vSeeds.clear();
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,63);
@@ -162,7 +164,11 @@ public:
 
         vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_main, pnSeed6_main + ARRAYLEN(pnSeed6_main));
 
-        fMiningRequiresPeers = false;
+        // NOTE: temporarily false again for genesis bootstrap - see chat. Must go back
+        // to true for the public release build once the chain is past height 0, so an
+        // operator who starts mining before their node has found the network can't
+        // build an isolated chain from genesis that later collides with the real one.
+        fMiningRequiresPeers = true;
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
         fMineBlocksOnDemand = false;
@@ -174,11 +180,12 @@ public:
 
         checkpointData = (CCheckpointData) {
             boost::assign::map_list_of
-            ( 0, uint256S("0x6c0b324d3d9930f161d645a7abacfb9719119509b4abdd842c94a4958ddddb1d")),
-            1777268123, // * UNIX timestamp of last checkpoint block
-            0,    // * total number of transactions between genesis and last checkpoint
+            ( 0, uint256S("0x4eb280fcccd7dc06ad65a6270d34fb983b16073209a40de195650752386240ca"))
+            ( 10, uint256S("0x009589a041f7fe965fde8068e32e679cf357fe341d07eb534eeea206c55654f8")),
+            1787402042, // * UNIX timestamp of last checkpoint block
+            11,    // * total number of transactions between genesis and last checkpoint
                         //   (the tx=... number in the SetBestChain debug.log lines)
-            0        // * estimated number of transactions per day after checkpoint
+            500        // * estimated number of transactions per day after checkpoint
         };
     }
 };
@@ -257,7 +264,7 @@ public:
         nDelayGetHeadersTime = 24 * 60 * 60;
         nPruneAfterHeight = 1000;
 
-        genesis = CreateGenesisBlock(1548838834, 2, 0x207fffff, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1548838834, 1, 0x207fffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
 
         vFixedSeeds.clear();
@@ -288,7 +295,7 @@ public:
 
         checkpointData = (CCheckpointData) {
             boost::assign::map_list_of
-            (    0, uint256S("0x56521f87074aece5b48e78471113b1cbc6365088c2cc9419439674a057c46274")),
+            (    0, uint256S("0x41b7c390a6e5be2ecae11ca0b4cacc06f603722a7a8df99fe649b319f981637e")),
 
             1548838834, // * UNIX timestamp of last checkpoint block
             0,       // * total number of transactions between genesis and last checkpoint
@@ -378,7 +385,7 @@ public:
 
         checkpointData = (CCheckpointData){
             boost::assign::map_list_of
-            ( 0, uint256S("0x3a04bdf8ba3df236dc0b914ac1308f6ab858255ac971a7bf0dcabdebad6d1dc9")),
+            ( 0, uint256S("0x6a27f1e2e8fdb0a7eca9476a766fc165567cb45ebdbc58469913f4f76855474b")),
             1548839002,
             0,
             0

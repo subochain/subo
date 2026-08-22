@@ -153,6 +153,7 @@ void CMasternodeSync::ClearFulfilledRequests(CConnman& connman)
 void CMasternodeSync::ProcessTick(CConnman& connman)
 {
     static int nTick = 0;
+
     if(nTick++ % MASTERNODE_SYNC_TICK_SECONDS != 0) return;
 
     // reset the sync process if the last call to this function was more than 60 minutes ago (client was in sleep mode)

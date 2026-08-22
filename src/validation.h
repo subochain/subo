@@ -225,8 +225,11 @@ bool ProcessNewBlock(const CChainParams& chainparams, const CBlock* pblock, bool
  * @param[out] state This may be set to an Error state if any error occurred processing them
  * @param[in]  chainparams The params for the chain we want to connect to
  * @param[out] ppindex If set, the pointer will be set to point to the last new block index object for the given headers
+ * @param[in]  phashes If set, must be the same length as headers; phashes->at(i) is the
+ *             already-computed HashSubo() of headers[i], reused instead of recomputing the
+ *             (expensive, memory-hard) header hash a second time.
  */
-bool ProcessNewBlockHeaders(const std::vector<CBlockHeader>& block, CValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex=NULL);
+bool ProcessNewBlockHeaders(const std::vector<CBlockHeader>& block, CValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex=NULL, const std::vector<uint256>* phashes=NULL);
 
 /** Check whether enough disk space is available for an incoming block */
 bool CheckDiskSpace(uint64_t nAdditionalBytes = 0);
@@ -432,7 +435,7 @@ bool DisconnectBlocks(int blocks);
 void ReprocessBlocks(int nBlocks);
 
 /** Context-independent validity checks */
-bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, bool fCheckPOW = true);
+bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, bool fCheckPOW = true, const uint256* phash = NULL);
 bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW = true, bool fCheckMerkleRoot = true);
 
 /** Context-dependent validity checks */

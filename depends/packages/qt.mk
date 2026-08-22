@@ -13,6 +13,14 @@ $(package)_patches+=fix_qt_pkgconfig.patch
 # NOTE: fix_qt_configure.patch, fix-cocoahelpers-macos.patch, qfixed-coretext.patch
 # were removed from this repo and are not needed on Linux (macOS-only or version-specific).
 
+# Qt 5.7.1's QByteArray-based gethostname() buffer in qlockfile_unix.cpp (used by
+# every QSettings::sync()) trips glibc's _FORTIFY_SOURCE gethostname_chk on modern
+# toolchains that default to _FORTIFY_SOURCE=2/3, aborting the whole app on startup.
+# The 512-byte buffer is genuinely large enough; this is a fortify false positive
+# against old Qt code, not a real overflow. Disable fortify for this package only.
+$(package)_cxxflags += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0
+$(package)_cflags += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0
+
 $(package)_qttranslations_file_name=qttranslations-$($(package)_suffix)
 $(package)_qttranslations_sha256_hash=3a15aebd523c6d89fb97b2d3df866c94149653a26d27a00aac9b6d3020bc5a1d
 

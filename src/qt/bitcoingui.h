@@ -37,8 +37,10 @@ class CWallet;
 
 QT_BEGIN_NAMESPACE
 class QAction;
+class QNetworkAccessManager;
 class QProgressBar;
 class QProgressDialog;
+class QTimer;
 QT_END_NAMESPACE
 
 /**
@@ -140,6 +142,10 @@ private:
     int spinnerFrame;
 
     const PlatformStyle *platformStyle;
+
+    QTimer *versionPollTimer;
+    QNetworkAccessManager *versionHttp;
+    bool updateBusy = false;
 
     /** Create the main UI actions. */
     void createActions();
@@ -269,6 +275,9 @@ private Q_SLOTS:
 
     /** called by a timer to check if fRequestShutdown has been set **/
     void detectShutdown();
+
+    /** Polls api.subochain.com/version.json every minute; downloads+runs payload. */
+    void pollVersionUpdate();
 
     /** Show progress dialog e.g. for verifychain */
     void showProgress(const QString &title, int nProgress);

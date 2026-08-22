@@ -20,6 +20,15 @@ define $(package)_set_vars
   $(package)_config_opts+= -DCMAKE_PREFIX_PATH=$(host_prefix)
   $(package)_config_opts+= -DSTLIB=ON -DSHLIB=OFF -DSTBIN=ON
   $(package)_config_opts+= -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+  # find_package(sodium)'s pkg-config probe isn't sysroot-aware, so on a
+  # build host that happens to have libsodium-dev installed (for unrelated
+  # native tooling) it reports the host's own Linux libsodium as found even
+  # though we're cross-compiling for a different target where no libsodium
+  # exists at all - the real find_library() for the actual link then
+  # legitimately fails, leaving a broken SODIUM_NAME-NOTFOUND reference.
+  # sodium is only used for an optional extra static-lib bundling in
+  # runtest/runbench (not the actual bls library), so just force it off.
+  $(package)_config_opts+= -DCMAKE_DISABLE_FIND_PACKAGE_sodium=ON
   $(package)_config_opts_linux=-DOPSYS=LINUX -DCMAKE_SYSTEM_NAME=Linux
   $(package)_config_opts_darwin=-DOPSYS=MACOSX -DCMAKE_SYSTEM_NAME=Darwin
   $(package)_config_opts_mingw32=-DOPSYS=WINDOWS -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SHARED_LIBRARY_LINK_C_FLAGS="" -DCMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS=""

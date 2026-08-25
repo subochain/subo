@@ -1,4 +1,4 @@
-Subo Core v1.20.2.1 (algorithm: Subo)
+Subo Core v1.20.2.2 (algorithm: Subo)
 ===============================
 
 - Site: https://subochain.com
